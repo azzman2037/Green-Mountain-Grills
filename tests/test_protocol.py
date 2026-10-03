@@ -1,9 +1,8 @@
 """Tests for the GMG wire protocol parser and command builders.
 
-These tests run against the public surface of the protocol module. If the
-module's internal symbols diverge from the names assumed here, the file
-self-skips via ``pytest.importorskip`` so the rest of the suite continues to
-run.
+Frame offsets follow ``parse_status_frame`` (the layout confirmed against a
+live Jim Bowie), not the older byte table that sat 4 bytes short after offset 8.
+Imports are hard: a rename must fail the suite rather than silently skip it.
 """
 from __future__ import annotations
 
@@ -11,23 +10,18 @@ import struct
 
 import pytest
 
-# Self-skip cleanly if the protocol module hasn't been written yet, or if its
-# internals diverge from the names used below.
-protocol = pytest.importorskip("custom_components.gmg.api.protocol")
-
-from custom_components.gmg.api import GMGSnapshot  # noqa: E402
-
-try:
-    from custom_components.gmg.api.protocol import (
-        GMGInvalidValueError,
-        GMGProtocolError,
-        build_set_grill_temp,
-        build_set_probe_target,
-        parse_status_frame,
-    )
-except ImportError as exc:  # pragma: no cover - guard for divergent names
-    pytest.skip(f"protocol internals not exposed under expected names: {exc}", allow_module_level=True)
-
+from custom_components.gmg.api import GMGSnapshot
+from custom_components.gmg.api.protocol import (
+    GMGInvalidValueError,
+    GMGProtocolError,
+    parse_status_frame,
+)
+from custom_components.gmg.api.protocol import (
+    encode_set_grill_temp as build_set_grill_temp,
+)
+from custom_components.gmg.api.protocol import (
+    encode_set_probe_target as build_set_probe_target,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,7 +55,6 @@ def _make_frame(
     hopper_pct: int = 80,
     profile_end: int = 0,
     grill_type: int = 3,
-    reserved: bytes = b"\x00\x00\x00\x00",
 ) -> bytes:
     """Construct a 36-byte status frame with the given field values."""
     frame = bytearray()
@@ -71,18 +64,18 @@ def _make_frame(
     frame += _u16(grill_set)              # 6..7
     frame += bytes([api_version])         # 8
     frame += build                        # 9..11
-    frame += _u16(probe_2)                # 12..13
-    frame += _u16(probe_2_set)            # 14..15
-    frame += _u32(profile_remaining)      # 16..19
-    frame += _u32(warn_code)              # 20..23
-    frame += _u16(probe_1_set)            # 24..25
-    frame += bytes([power_state])         # 26
-    frame += bytes([grill_mode])          # 27
-    frame += bytes([fire_state])          # 28
-    frame += bytes([hopper_pct])          # 29
-    frame += bytes([profile_end])         # 30
-    frame += bytes([grill_type])          # 31
-    frame += reserved                     # 32..35
+    frame += bytes(4)                     # 12..15 reserved
+    frame += _u16(probe_2)                # 16..17
+    frame += _u16(probe_2_set)            # 18..19
+    frame += _u32(profile_remaining)      # 20..23
+    frame += _u32(warn_code)              # 24..27
+    frame += _u16(probe_1_set)            # 28..29
+    frame += bytes([power_state])         # 30
+    frame += bytes([grill_mode])          # 31
+    frame += bytes([fire_state])          # 32
+    frame += bytes([hopper_pct])          # 33
+    frame += bytes([profile_end])         # 34
+    frame += bytes([grill_type])          # 35
     assert len(frame) == 36
     return bytes(frame)
 
@@ -118,6 +111,38 @@ def test_parse_probe_sentinel_means_unplugged() -> None:
     frame = _make_frame(probe_1=89)
     snap = parse_status_frame(frame)
     assert snap.probe_1_temp is None
+
+
+def test_parse_probe_2_fields_at_offset_16() -> None:
+    snap = parse_status_frame(_make_frame(probe_2=150, probe_2_set=203))
+    assert snap.probe_2_temp == 150
+    assert snap.probe_2_target == 203
+
+
+@pytest.mark.parametrize("raw", [558, 601, 0xFFFF])
+def test_parse_probe_above_upper_guard_means_unplugged(raw: int) -> None:
+    """Empty socket on Jim Bowie fw UNDB02SUC0_1.6 reads 601 degF, not 89."""
+    snap = parse_status_frame(_make_frame(probe_1=raw, probe_2=raw))
+    assert snap.probe_1_temp is None
+    assert snap.probe_2_temp is None
+
+
+def test_parse_probe_at_upper_guard_is_kept() -> None:
+    assert parse_status_frame(_make_frame(probe_1=557)).probe_1_temp == 557
+
+
+def test_parse_live_jim_bowie_snapshot() -> None:
+    """Live cook: pit 223F / set 223F, probe 1 163F (no target), probe 2 empty."""
+    snap = parse_status_frame(
+        _make_frame(
+            grill_temp=223, grill_set=223, probe_1=163, probe_1_set=0,
+            probe_2=601, probe_2_set=0, power_state=1, fire_state=3, grill_type=3,
+        )
+    )
+    assert (snap.grill_temp, snap.grill_set_temp, snap.probe_1_temp) == (223, 223, 163)
+    assert snap.probe_2_temp is None
+    assert snap.probe_1_target == 0
+    assert snap.flame_on is True
 
 
 def test_parse_low_pellet_code_8() -> None:
