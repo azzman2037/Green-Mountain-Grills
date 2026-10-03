@@ -1,6 +1,6 @@
 [project]
 name = "gmg-home-assistant"
-version = "1.0.0"
+version = "1.0.1"
 description = "Home Assistant integration for Green Mountain Grills WiFi-enabled pellet smokers."
 requires-python = ">=3.13"
 readme = "README.md"
