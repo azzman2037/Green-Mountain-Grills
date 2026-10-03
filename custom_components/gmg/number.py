@@ -33,8 +33,13 @@ PARALLEL_UPDATES = 1
 class GMGNumberDescription(NumberEntityDescription):
     """Describe a GMG number entity with bound read/write callbacks."""
 
-    value_fn: Callable[[GMGCoordinator], int]
+    value_fn: Callable[[GMGCoordinator], int | None]
     set_fn: Callable[[GMGCoordinator, int], Awaitable[None]]
+
+
+def _target_or_none(value: int) -> int | None:
+    """Report an unset probe target (the controller sends 0 degF) as unknown."""
+    return value if value >= MIN_PROBE_TARGET_F else None
 
 
 NUMBERS: tuple[GMGNumberDescription, ...] = (
@@ -59,7 +64,7 @@ NUMBERS: tuple[GMGNumberDescription, ...] = (
         native_max_value=MAX_PROBE_TARGET_F,
         native_step=1,
         mode=NumberMode.BOX,
-        value_fn=lambda c: c.data.probe_1_target,
+        value_fn=lambda c: _target_or_none(c.data.probe_1_target),
         set_fn=lambda c, v: c.async_set_probe_target(1, v),
     ),
     GMGNumberDescription(
@@ -71,7 +76,7 @@ NUMBERS: tuple[GMGNumberDescription, ...] = (
         native_max_value=MAX_PROBE_TARGET_F,
         native_step=1,
         mode=NumberMode.BOX,
-        value_fn=lambda c: c.data.probe_2_target,
+        value_fn=lambda c: _target_or_none(c.data.probe_2_target),
         set_fn=lambda c, v: c.async_set_probe_target(2, v),
     ),
 )
