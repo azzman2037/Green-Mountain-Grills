@@ -68,28 +68,33 @@ The full poll response (`UR001!`) is always 36 bytes. Offsets are zero-based.
 
 | Offset | Length | Field                          | Type         | Notes                                                                 |
 |-------:|-------:|--------------------------------|--------------|-----------------------------------------------------------------------|
-|   0    |   2    | Header / command echo          | bytes        | First byte echoes the command class. Validate as a sanity check only. |
+|   0    |   2    | Header                         | bytes        | `UR` (`55 52`). Validated by the parser.                              |
 |   2    |   2    | Grill temperature              | uint16 LE    | Degrees F. `0` while warming up from cold.                            |
-|   4    |   2    | Probe 1 temperature            | uint16 LE    | Degrees F. **`89` is the sentinel for "unplugged"**.                  |
+|   4    |   2    | Probe 1 temperature            | uint16 LE    | Degrees F. `89` = unplugged sentinel; see Special values.             |
 |   6    |   2    | Grill setpoint                 | uint16 LE    | Degrees F.                                                            |
 |   8    |   1    | API version                    | uint8        | Bumped by controller firmware revs.                                   |
-|   9    |   3    | Build / firmware sub-info      | bytes        | Vendor-defined; not parsed.                                           |
-|  12    |   2    | Probe 2 temperature            | uint16 LE    | Degrees F. `89` sentinel as for probe 1.                              |
-|  14    |   2    | Probe 2 setpoint               | uint16 LE    | Degrees F.                                                            |
-|  16    |   4    | Profile time remaining         | uint32 LE    | Seconds. `0` when no profile is active.                               |
-|  20    |   4    | Warn code                      | uint32 LE    | See WarnCode table. LSB is the active code.                           |
-|  24    |   2    | Probe 1 setpoint               | uint16 LE    | Degrees F.                                                            |
-|  26    |   1    | Power state                    | uint8        | See PowerState table.                                                 |
-|  27    |   1    | Grill mode                     | uint8        | Reserved; mirrors profile state.                                      |
-|  28    |   1    | Fire state                     | uint8        | See FireState table. `198` indicates Cold Smoke.                      |
-|  29    |   1    | Hopper / pellet percent        | uint8        | Range `0..100`. Not all controllers populate this.                    |
-|  30    |   1    | Profile end byte               | uint8        | `1` if a profile finished and is awaiting acknowledgement.            |
-|  31    |   1    | Grill type                     | uint8        | See [MODELS.md](MODELS.md) for the mapping.                           |
-|  32    |   4    | Reserved                       | bytes        | Zero on all observed firmwares.                                       |
+|   9    |   7    | Build / reserved               | bytes        | Vendor-defined; not parsed.                                           |
+|  16    |   2    | Probe 2 temperature            | uint16 LE    | Degrees F. Same unplugged handling as probe 1.                        |
+|  18    |   2    | Probe 2 setpoint               | uint16 LE    | Degrees F. `0` = no target set.                                       |
+|  20    |   4    | Profile time remaining         | uint32 LE    | Seconds. `0` when no profile is active.                               |
+|  24    |   4    | Warn code                      | uint32 LE    | See WarnCode table.                                                   |
+|  28    |   2    | Probe 1 setpoint               | uint16 LE    | Degrees F. `0` = no target set.                                       |
+|  30    |   1    | Power state                    | uint8        | See PowerState table.                                                 |
+|  31    |   1    | Grill mode                     | uint8        | Reserved; mirrors profile state.                                      |
+|  32    |   1    | Fire state                     | uint8        | See FireState table. `198` indicates Cold Smoke.                      |
+|  33    |   1    | Hopper / pellet percent        | uint8        | Range `0..100`. Not all controllers populate this (Jim Bowie doesn't). |
+|  34    |   1    | Profile end byte               | uint8        | `1` if a profile finished and is awaiting acknowledgement.            |
+|  35    |   1    | Grill type                     | uint8        | See [MODELS.md](MODELS.md) for the mapping.                           |
+
+> Offsets were corrected in v1.0.1. The earlier table placed every field after
+> byte 8 four bytes too early; the parser was already correct, and the layout
+> above is confirmed against a live Jim Bowie (fw `UNDB02SUC0_1.6`): with the
+> old offsets power and fire state decode as nonsense, with these they read
+> `on` / `running` and the pit matches its setpoint.
 
 ## Enumerations
 
-### PowerState (offset 26)
+### PowerState (offset 30)
 
 | Value | Meaning            |
 |------:|--------------------|
@@ -98,7 +103,7 @@ The full poll response (`UR001!`) is always 36 bytes. Offsets are zero-based.
 |     2 | Fan-only / venting |
 |     3 | Cold Smoke active  |
 
-### FireState (offset 28)
+### FireState (offset 32)
 
 | Value | Meaning                |
 |------:|------------------------|
@@ -112,7 +117,7 @@ The full poll response (`UR001!`) is always 36 bytes. Offsets are zero-based.
 
 `flame_on` is reported as `True` when `FireState in {1, 2, 3}`.
 
-### WarnCode (offset 20, low byte)
+### WarnCode (offset 24, low byte)
 
 | Value | Meaning                  |
 |------:|--------------------------|
@@ -134,9 +139,12 @@ and `128` as the same condition.
 
 - **Probe sentinel:** A reading of exactly `89 degF` indicates the probe is
   unplugged. The integration surfaces this as `None` rather than `89`.
-- **Probe upper guard:** Readings above approximately `557 degF` (`0x0245`)
-  are physically impossible for the supplied thermistor and indicate a wiring
-  fault. The integration discards them.
+- **Probe upper guard:** Readings above `557 degF` (`0x022D`) are physically
+  impossible for the supplied thermistor. Some firmwares send these instead of
+  the sentinel for an empty socket (Jim Bowie fw `UNDB02SUC0_1.6` reports
+  `601 degF`). The integration surfaces them as `None` (sensor `unknown`).
+- **Unset probe target:** a probe setpoint of `0 degF` means no target; the
+  number entity reports `unknown` rather than `-18 degC`.
 - **Setpoint validation:**
   - Grill setpoint: `150 <= T <= 550` degF.
   - Probe target: `32 <= T <= 257` degF.
