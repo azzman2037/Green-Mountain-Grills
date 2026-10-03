@@ -19,6 +19,7 @@ from .const import (
     PROBE_TEMP_MAX,
     PROBE_TEMP_MIN,
     PROBE_UNPLUGGED_SENTINEL,
+    PROBE_UPPER_GUARD,
     STATUS_FRAME_LEN,
     STATUS_HEADER,
 )
@@ -56,7 +57,13 @@ def model_name_for(grill_type: int) -> str:
 
 
 def _probe_or_none(value: int) -> int | None:
-    if value == PROBE_UNPLUGGED_SENTINEL:
+    """Return the probe reading, or ``None`` when the probe is not usable.
+
+    ``None`` covers the documented 89 degF unplugged sentinel and anything above
+    the thermistor's physical ceiling, which some firmwares send for an empty
+    socket instead of the sentinel.
+    """
+    if value == PROBE_UNPLUGGED_SENTINEL or value > PROBE_UPPER_GUARD:
         return None
     return value
 

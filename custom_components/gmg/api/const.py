@@ -22,6 +22,10 @@ STATUS_FRAME_LEN: Final[int] = 36
 STATUS_HEADER: Final[bytes] = b"UR"
 
 PROBE_UNPLUGGED_SENTINEL: Final[int] = 89
+# Readings above this are not physically possible for the supplied thermistor.
+# Observed live: an empty probe-2 socket on a Jim Bowie (fw UNDB02SUC0_1.6)
+# reports 601 degF rather than the 89 degF sentinel.
+PROBE_UPPER_GUARD: Final[int] = 557
 LOW_PELLET_ALT_VALUE: Final[int] = 128
 
 GRILL_TEMP_MIN: Final[int] = 150
