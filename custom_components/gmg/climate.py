@@ -64,7 +64,10 @@ class GMGGrillClimate(GMGBaseEntity, ClimateEntity):
         snapshot = self.coordinator.data
         if snapshot.cold_smoke or snapshot.power_state is PowerState.COLD_SMOKE:
             return HVACMode.FAN_ONLY
-        if snapshot.power_state is PowerState.OFF:
+        # FAN is the firmware's shutdown cycle: the fire is out and the fan is
+        # purging the firepot before the grill stops. It is "off" from the
+        # user's point of view (hvac_action reports the fan still running).
+        if snapshot.power_state in (PowerState.OFF, PowerState.FAN):
             return HVACMode.OFF
         return HVACMode.HEAT
 
@@ -75,9 +78,9 @@ class GMGGrillClimate(GMGBaseEntity, ClimateEntity):
         fire = snapshot.fire_state
         if fire is FireState.RUNNING:
             return HVACAction.HEATING
-        # Cold smoke and fan-only run the fan without producing heat.
+        # Shutdown cool-down and cold smoke run the fan without producing heat.
         if snapshot.power_state in (PowerState.FAN, PowerState.COLD_SMOKE):
-            return HVACAction.IDLE
+            return HVACAction.FAN
         if fire in (FireState.STARTUP, FireState.COOL_DOWN):
             return HVACAction.IDLE
         return HVACAction.OFF

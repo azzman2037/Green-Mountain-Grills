@@ -85,7 +85,7 @@
         "state": {
           "off": "Off",
           "on": "On",
-          "fan": "Fan only",
+          "fan": "Shutting down (fan cool-down)",
           "cold_smoke": "Cold smoke"
         }
       },

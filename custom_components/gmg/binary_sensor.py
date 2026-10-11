@@ -96,7 +96,7 @@ BINARY_SENSORS: tuple[GMGBinarySensorDescription, ...] = (
         key="cooking",
         translation_key="cooking",
         device_class=BinarySensorDeviceClass.RUNNING,
-        value_fn=lambda s: s.power_state is not PowerState.OFF,
+        value_fn=lambda s: s.power_state in (PowerState.ON, PowerState.COLD_SMOKE),
     ),
 )
 
